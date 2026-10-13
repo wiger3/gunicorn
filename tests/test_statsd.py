@@ -1,3 +1,7 @@
+#
+# This file is part of gunicorn released under the MIT license.
+# See the NOTICE for more information.
+
 import io
 import logging
 import os
@@ -6,6 +10,8 @@ import socket
 import tempfile
 from datetime import timedelta
 from types import SimpleNamespace
+
+import pytest
 
 from gunicorn.config import Config
 from gunicorn.instrument.statsd import Statsd
@@ -115,6 +121,33 @@ def test_instrument():
     assert logger.sock.msgs[0] == b"gunicorn.request.duration:7000.0|ms"
     assert logger.sock.msgs[1] == b"gunicorn.requests:1|c|@1.0"
     assert logger.sock.msgs[2] == b"gunicorn.request.status.200:1|c|@1.0"
+
+
+@pytest.mark.parametrize(
+    ("metric_type", "expected"),
+    [
+        ("gauge", b"gunicorn.test:0|g"),
+        ("counter", b"gunicorn.test:0|c|@1.0"),
+        ("histogram", b"gunicorn.test:0|h"),
+        ("timer", b"gunicorn.test:0|ms"),
+    ],
+)
+def test_instrument_accepts_zero_value(metric_type, expected):
+    logger = Statsd(Config())
+    logger.sock = MockSocket(False)
+
+    logger.debug("", extra={"mtype": metric_type, "metric": "gunicorn.test",
+                            "value": 0})
+    assert logger.sock.msgs == [expected]
+
+
+def test_instrument_ignores_none_value():
+    logger = Statsd(Config())
+    logger.sock = MockSocket(False)
+
+    logger.debug("", extra={"mtype": "histogram", "metric": "gunicorn.test",
+                            "value": None})
+    assert not logger.sock.msgs
 
 
 def test_prefix():
